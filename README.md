@@ -50,6 +50,22 @@ In Discord:
 Until the app is published, only you and members of the app's team (**Team** page in the portal) can launch it.
 Add your friends there to test together.
 
+## Deploy (Fly.io)
+
+The `Dockerfile` and `fly.toml` run the server on one always-on Fly.io machine. Games are kept in memory,
+so the app must run on exactly one machine. With two machines, players at the same table could land on different ones.
+
+```bash
+winget install flyctl
+fly auth login
+fly launch --no-deploy --copy-config   # pick a unique app name if night-of-the-ninja is taken
+fly secrets set DISCORD_CLIENT_ID=... DISCORD_CLIENT_SECRET=...
+fly deploy --ha=false
+```
+
+Then set the Discord **Root Mapping** `/` to `<app-name>.fly.dev`. That URL stays the same across deploys, so you no longer need a tunnel.
+Every deploy restarts the server, which ends any game in progress.
+
 ## Files
 
 - `src/game.rs`: the rules engine and its tests (`cargo test`).
