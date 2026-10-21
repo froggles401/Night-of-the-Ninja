@@ -1,7 +1,8 @@
 {
   "private": true,
   "scripts": {
-    "build": "esbuild web/discord-sdk.js --bundle --format=esm --minify --outfile=static/discord.js"
+    "build": "esbuild web/discord-sdk.js --bundle --format=esm --minify --outfile=static/discord.js",
+    "tunnel": "cloudflared tunnel --url http://localhost:3000"
   },
   "dependencies": {
     "@discord/embedded-app-sdk": "2.5.0"
