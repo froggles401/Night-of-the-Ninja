@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Night of the Ninja</title>
+<style>
+  :root { --bg:#14121c; --panel:#1f1c2b; --tile:#2c2840; --line:#34304a; --text:#ece8f5; --dim:#9a93b3; --accent:#e0475a; --gold:#e8b94a; --kill:#ff8a98; }
+  * { box-sizing:border-box; }
+  html, body { height:100%; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.4 system-ui, sans-serif; overflow:hidden; }
+
+  /* App layout: header on top, then the game column and the side panel fill the window.
+     The page itself never scrolls; the log does. */
+  main { height:100%; max-width:1400px; margin:0 auto; padding:12px 16px; display:grid; gap:10px 14px;
+         grid-template-columns:minmax(0, 1fr) 300px; grid-template-rows:auto minmax(0, 1fr);
+         grid-template-areas:"head head" "game side"; }
+  main.solo { grid-template-columns:minmax(0, 1fr); grid-template-areas:"head" "game"; }
+  header { grid-area:head; }
+  .titleRow { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+  h1 { margin:0; font-size:20px; letter-spacing:.04em; }
+  h2 { margin:0 0 6px; font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--dim); }
+  #status { color:var(--gold); font-size:14px; }
+  .err { color:var(--accent); font-size:14px; }
+  .err:empty { display:none; }
+  .topButtons { display:flex; gap:6px; flex-shrink:0; }
+  .topButtons button { margin:0; height:34px; }
+  #helpBtn { width:34px; padding:0; border-radius:50%; font-weight:700; font-size:17px; }
+  #leaveBtn.confirm { background:var(--accent); border-color:var(--accent); }
+  .mobileOnly { display:none; }
+
+  /* Game column. Sized to fit; it only scrolls as a last resort in a very short window. */
+  .game { grid-area:game; display:flex; flex-direction:column; gap:10px; min-width:0; min-height:0; overflow-y:auto; }
+  .game > section { flex-shrink:0; }
+  section { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
+
+  /* Side panel: You on top, then the log filling the rest. */
+  .side { grid-area:side; min-height:0; display:flex; flex-direction:column; background:var(--panel);
+          border:1px solid var(--line); border-radius:10px; padding:10px 4px 10px 12px; }
+  .side[hidden] { display:none; }
+  .side > section { background:none; border:0; border-radius:0; padding:0 8px 0 0; }
+  #you { font-size:13.5px; flex-shrink:0; }
+  #logBox { flex:1; min-height:0; display:flex; flex-direction:column; border-top:1px solid var(--line); margin-top:10px; padding-top:10px; }
+  #log { flex:1; min-height:0; overflow-y:auto; font-size:13.5px; padding-right:6px; }
+  #log li { border-bottom:1px solid var(--line); }
+  /* Slim scrollbars that blend into the panels. */
+  #log, .game { scrollbar-width:thin; scrollbar-color:#4a4466 transparent; }
+  #log::-webkit-scrollbar, .game::-webkit-scrollbar { width:8px; }
+  #log::-webkit-scrollbar-thumb, .game::-webkit-scrollbar-thumb { background:#4a4466; border-radius:8px; }
+  #log::-webkit-scrollbar-track, .game::-webkit-scrollbar-track { background:transparent; }
+
+  button { font:inherit; background:var(--tile); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:7px 12px; margin:4px 4px 0 0; cursor:pointer; }
+  button:hover { border-color:var(--dim); }
+  button.on, button.primary { background:var(--accent); border-color:var(--accent); }
+  button:disabled { opacity:.4; cursor:default; }
+  input { font:inherit; padding:8px; border-radius:8px; border:1px solid var(--line); background:#0e0d14; color:var(--text); }
+  select { font:inherit; padding:4px 6px; border-radius:6px; border:1px solid var(--line); background:#0e0d14; color:var(--text); }
+  label { display:block; padding:3px 0; }
+  ul { list-style:none; margin:0; padding:0; }
+  li { padding:3px 0; }
+  .sub { display:block; font-size:12.5px; line-height:1.35; color:var(--dim); margin-top:2px; }
+  .chip { display:inline-block; padding:3px 8px; margin:2px; border-radius:6px; background:var(--tile); }
+  .tag { display:inline-block; font-size:11px; padding:1px 6px; margin-left:6px; border-radius:4px; background:var(--accent); color:#fff; vertical-align:middle; }
+
+  /* Your move */
+  #prompt { border-color:var(--accent); }
+  #prompt p { margin:0 0 6px; }
+  .timer { float:right; color:var(--gold); text-transform:none; letter-spacing:0; font-size:15px; }
+  .timer.low { color:var(--accent); }
+  .news { margin:0 0 8px; padding:6px 10px; border-left:3px solid var(--gold); background:#2a2536; border-radius:6px; }
+  .news div { padding:1px 0; }
+  .choices { display:grid; grid-template-columns:repeat(auto-fill, minmax(210px, 1fr)); gap:6px; margin:6px 0 4px; }
+  button.card { display:block; width:100%; text-align:left; margin:0; padding:7px 10px; }
+  button.card b, .chip b { color:var(--text); }
+  button.card.pick { position:relative; padding-right:76px; }
+  button.card.pick.on { background:#3a1f2c; border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent); }
+  button.card.pick.on::after { content:'✓ Playing'; position:absolute; top:8px; right:10px; color:var(--accent); font-weight:700; font-size:12.5px; }
+  #hand .chip { display:block; margin:4px 0; padding:5px 8px; }
+
+  /* Phase bar across the top: one segment per step of the round. */
+  .phases { display:flex; gap:3px; list-style:none; padding:0; margin:8px 0 0; }
+  .phases li { flex:1; text-align:center; font-size:12.5px; padding:5px 4px; background:var(--tile); color:var(--dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .phases li:first-child { border-radius:8px 0 0 8px; }
+  .phases li:last-child { border-radius:0 8px 8px 0; }
+  .phases li.done { background:#2a2338; color:#6f6888; }
+  .phases li.now { background:var(--gold); color:#1a1520; font-weight:700; }
+
+  /* Night tracker: the card resolving now, and this phase's cards as a row of chips. */
+  #night { border-color:var(--gold); }
+  #spot { font-size:15px; margin-bottom:6px; }
+  #spot .arrow { color:var(--gold); }
+  #playsTitle { margin-top:4px; }
+  #plays { display:flex; flex-wrap:wrap; gap:5px; }
+  #plays li { display:flex; gap:5px; align-items:baseline; font-size:13px; padding:3px 9px; border-radius:6px; background:var(--tile); border:1px solid var(--line); }
+  #plays li.now { color:var(--gold); border-color:var(--gold); font-weight:600; }
+  #plays li.next { color:var(--dim); }
+  #plays li.skipped { color:var(--dim); text-decoration:line-through; }
+
+  /* Player cards: compact tiles so the whole table fits. */
+  .seats { display:grid; grid-template-columns:repeat(auto-fill, minmax(190px, 1fr)); gap:8px; margin-bottom:4px; }
+  .seat { position:relative; background:var(--tile); border:1px solid var(--line); border-radius:10px; padding:8px; }
+  .seat.me { border-color:var(--gold); }
+  .seat.dead { opacity:.55; filter:grayscale(1); }
+  .seat.acting { border-color:var(--gold); box-shadow:0 0 0 2px var(--gold), 0 0 14px rgba(232,185,74,.45); }
+  .seat.targeted { border-color:var(--accent); box-shadow:0 0 0 2px var(--accent), 0 0 14px rgba(224,71,90,.45); }
+  .seat .top { display:flex; gap:8px; align-items:center; }
+  .avatar { width:42px; height:42px; flex-shrink:0; border-radius:50%; display:grid; place-items:center; background:#3a3552; font-size:19px; font-weight:700; object-fit:cover; }
+  .seat .info { min-width:0; flex:1; }
+  .seatName { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .stats { display:flex; gap:6px; align-items:center; flex-wrap:wrap; font-size:12.5px; color:var(--dim); margin-top:3px; }
+  .house { padding:1px 7px; border-radius:5px; font-size:12px; font-weight:600; }
+  .house.lotus { background:#5b2a4a; color:#ffc9e8; }
+  .house.crane { background:#1f3b5c; color:#c4e2ff; }
+  .house.ronin { background:#47444f; color:var(--text); }
+  .house.unknown { background:#1c1a26; color:var(--dim); }
+  .house.guess { outline:1px dashed currentColor; outline-offset:-1px; }
+  .cb { display:inline-block; width:10px; height:14px; border-radius:2px; margin:0 1px; vertical-align:middle; background:linear-gradient(135deg,#8a2a3c,#3b1020); border:1px solid #c0485a; }
+  .seat .flag { position:absolute; top:-9px; right:8px; font-size:11px; font-weight:700; padding:0 6px; border-radius:5px; background:var(--panel); }
+  .seat.acting .flag { color:var(--gold); }
+  .seat.targeted .flag { color:var(--accent); }
+  .seat .death { font-size:11.5px; color:var(--kill); margin-top:4px; }
+  .shown { display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; }
+  .mini { font-size:11.5px; padding:1px 6px; border-radius:5px; background:#3a3552; border:1px solid var(--line); }
+  .mini.peek { outline:1px dashed var(--gold); outline-offset:-1px; color:var(--gold); }
+  .seat button { font-size:12px; padding:2px 8px; margin:6px 4px 0 0; }
+
+  /* Home page */
+  .home { width:100%; max-width:720px; margin:24px auto 0; }
+  .home > form > input { width:100%; max-width:320px; }
+  .homeGrid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:14px; }
+  .homeCard { background:var(--tile); border:1px solid var(--line); border-radius:10px; padding:14px; display:flex; flex-direction:column; gap:8px; }
+  .homeCard h3 { margin:0; font-size:17px; }
+  .homeCard button { margin:auto 0 0; align-self:flex-start; }
+  #code { text-transform:uppercase; letter-spacing:.25em; font-weight:700; width:100%; }
+  #lobbyCode { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px; padding-bottom:10px; border-bottom:1px solid var(--line); }
+  #lobbyCode[hidden] { display:none; }
+  #lobbyCode b { font-size:20px; letter-spacing:.2em; color:var(--gold); }
+  #lobbyCode button { margin:0; }
+
+  /* Help overlay */
+  #help { position:fixed; inset:0; background:rgba(8,7,12,.78); overflow:auto; z-index:10; padding:16px; }
+  #help[hidden] { display:none; }
+  #help .sheet { position:relative; max-width:680px; margin:0 auto; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:20px; }
+  #help h2 { margin-top:22px; }
+  #help p, #help li { color:var(--text); }
+  #help ol, #help ul.dots { padding-left:20px; list-style:revert; }
+  #helpClose { position:absolute; top:12px; right:12px; margin:0; }
+  .cardRow { padding:8px 10px; margin:6px 0; border-radius:8px; background:var(--tile); }
+
+  /* Phones and narrow windows: one column, and You + Log slide in from the right. */
+  @media (max-width: 760px) {
+    body { font-size:14px; }
+    main { grid-template-columns:minmax(0, 1fr); grid-template-areas:"head" "game"; padding:10px; gap:8px; }
+    h1 { font-size:17px; }
+    .mobileOnly:not([hidden]) { display:inline-block; }
+    .side { position:fixed; top:0; right:0; bottom:0; width:min(340px, 88vw); z-index:5; border-radius:10px 0 0 10px;
+            transform:translateX(105%); transition:transform .2s ease; box-shadow:-8px 0 24px rgba(0,0,0,.5); }
+    .side.open { transform:none; }
+    #sideClose { align-self:flex-end; margin:0 8px 6px 0; }
+    /* Only the current step is named; the rest are slim segments. */
+    .phases li:not(.now) { font-size:0; padding:4px 0; }
+    .phases li.now { flex:4; font-size:12px; }
+    .seats { grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:6px; }
+    .avatar { width:34px; height:34px; font-size:16px; }
+    .choices { grid-template-columns:1fr; }
+    .home { margin-top:8px; }
+    .homeGrid { grid-template-columns:1fr; }
+  }
+  @media (prefers-reduced-motion: reduce) { .side { transition:none; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="titleRow">
+      <div><h1>🥷 Night of the Ninja</h1><div id="status"></div></div>
+      <div class="topButtons">
+        <button id="logBtn" class="mobileOnly" hidden aria-controls="side" aria-expanded="false">Log</button>
+        <button id="leaveBtn" hidden>Leave</button>
+        <button id="helpBtn" aria-label="How to play" title="How to play">?</button>
+      </div>
+    </div>
+    <div class="err" id="actErr"></div>
+    <ol id="phases" class="phases" hidden aria-label="Round progress"></ol>
+  </header>
+
+  <div class="game">
+  <section id="joinBox" class="home">
+    <form id="homeForm">
+      <label for="name"><h2>Your name</h2></label>
+      <input id="name" maxlength="20" placeholder="Your name" autocomplete="nickname">
+      <div class="homeGrid">
+        <div class="homeCard">
+          <h3>Create a lobby</h3>
+          <span class="sub">Start a new table, then share its code with your friends.</span>
+          <button type="button" id="createBtn" class="primary">Create lobby</button>
+        </div>
+        <div class="homeCard">
+          <h3>Join a lobby</h3>
+          <label for="code" class="sub">Enter the code your host shared.</label>
+          <input id="code" maxlength="5" placeholder="ABCDE" autocapitalize="characters" autocomplete="off" spellcheck="false">
+          <button type="submit" id="joinBtn" class="primary">Join lobby</button>
+        </div>
+      </div>
+    </form>
+    <p class="err" id="joinErr"></p>
+  </section>
+
+  <section id="night" hidden aria-live="polite">
+    <div id="spot"></div>
+    <h2 id="playsTitle"></h2>
+    <ul id="plays"></ul>
+  </section>
+  <section id="prompt" hidden></section>
+  <section id="table" hidden><div id="lobbyCode" hidden></div><h2>Players</h2><div id="players" class="seats"></div><div id="hostBar"></div></section>
+  <section id="settings" hidden><h2>Settings</h2><div id="settingsBody"></div></section>
+  </div>
+
+  <aside class="side" id="side" hidden aria-label="You and the game log">
+  <button id="sideClose" class="mobileOnly" aria-label="Close the log">✕ Close</button>
+  <section id="you" hidden><h2>You</h2>
+    <div>House: <b id="house"></b></div>
+    <div>Hand: <span id="hand"></span></div>
+    <div id="honorRow">Honor: <span id="tokens"></span></div>
+  </section>
+  <section id="logBox" hidden><h2>Log (🔒 = only you see it)</h2><ul id="log"></ul></section>
+  </aside>
+</main>
+
+<div id="help" hidden role="dialog" aria-modal="true" aria-label="How to play">
+  <div class="sheet">
+    <button id="helpClose" aria-label="Close help">✕</button>
+    <h1>How to play</h1>
+
+    <h2>The goal</h2>
+    <p>Two Houses, <b>Lotus</b> and <b>Crane</b>, fight in secret. You only know your own House card. Its rank (1 is highest) shows how important you are to your House.
+      With an odd number of players, one person is the <b>Ronin</b> and belongs to no House.</p>
+
+    <h2>A round</h2>
+    <ol>
+      <li><b>House cards:</b> everyone is secretly dealt one.</li>
+      <li><b>Ninja draft:</b> you get 3 Ninja cards. Keep 1 and pass 2 to the left, then keep 1 more and discard the last.</li>
+      <li><b>The Night:</b> five phases, in this order:
+        <b>Spy → Mystic → Trickster → Blind Assassin → Shinobi</b>.
+        In each phase everyone is asked whether to play cards of that type, so passing gives nothing away.
+        Played cards resolve from the lowest number to the highest. A card you skip can't be played later in the round.</li>
+      <li><b>Dawn:</b> everyone reveals. The House with the highest-ranked survivor wins the round.
+        If both Houses' best survivors tie, compare the next ones. A surviving <b>Mastermind</b> wins the round for their House outright.</li>
+    </ol>
+
+    <h2>Turn timer</h2>
+    <p>Each decision has a countdown (⏱). If it runs out, a default move is made for you:
+      you pass, answer No, or a choice is made at random when one is required.
+      The host sets the length in the lobby, or turns it off.</p>
+
+    <h2>Dying and reacts</h2>
+    <p>Killed players stop playing cards but can still talk, bluff and advise. <b>Mirror Monk</b> and <b>Martyr</b> are reacts: you reveal one when a
+      Shinobi or Blind Assassin chooses to kill you. Reacts don't work against the Judge.</p>
+
+    <h2>Winning</h2>
+    <p>Each round is a whole game: everyone in the winning House wins, even the dead, plus the Ronin if they survive.
+      In a perfect tie, every survivor wins. The Martyr, Soul Merchant and Thief aren't used, so the game seats up to 10 players.</p>
+
+    <h2>Honor mode (optional)</h2>
+    <p>The host can turn this on in the lobby to play the full game over several rounds. It adds the Martyr, Soul Merchant and Thief and seats up to 11 players.</p>
+    <ul class="dots">
+      <li>Everyone in the winning House draws an Honor token (worth 2, 3 or 4), even the dead.</li>
+      <li>A surviving Ronin draws one too. In a perfect tie, every survivor draws one.</li>
+      <li>Token values are secret. The first player to <b>10 points</b> wins the game.</li>
+    </ul>
+
+    <h2>Symbols</h2>
+    <p>🔒 only you can see it · 👑 host · 🤖 bot · 💀 dead</p>
+
+    <h2>Cards</h2>
+    <div id="cardList">Loading…</div>
+  </div>
+</div>
+<script type="module" src="/app.js"></script>
+</body>
+</html>
