@@ -282,8 +282,16 @@ function render(v) {
   }
   $('log').replaceChildren(...v.log.map(s => el('li', s)));
   // Only rebuild the prompt when it changes, so half-made selections survive polling.
-  const sig = JSON.stringify([v.prompt, v.news]);
-  if (sig !== lastPrompt) { lastPrompt = sig; renderPrompt(v.prompt, v.news); }
+  const sig = JSON.stringify([v.prompt, v.news, v.winners]);
+  if (sig !== lastPrompt) {
+    lastPrompt = sig; renderPrompt(v.prompt, v.news);
+    if (v.winners.length) {
+      const won = v.players[v.me] && v.winners.includes(v.players[v.me].name);
+      const b = el('div', null, 'victory');
+      b.append(el('div', won ? '🏆 You win! 🏆' : '🏆 Victory 🏆', 'big'), el('div', v.winners.join(' & '), 'names'));
+      $('prompt').insertBefore(b, $('prompt').children[1]); // right under the heading
+    }
+  }
   // Updated every poll without rebuilding the prompt.
   const t = $('timer');
   t.textContent = v.timer == null ? '' : `⏱ ${v.timer}s`;
